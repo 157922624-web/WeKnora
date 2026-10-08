@@ -243,15 +243,20 @@ jobs:
           fi
           if [ "${{ runner.os }}" = "Windows" ]; then
             NSIS_FLAG="-nsis"
-            # Provide sqlite3.h for the sqlite-vec cgo package (see the
-            # Pre-compile step): copy the mattn/go-sqlite3 amalgamation
-            # header and point CGO_CFLAGS at it. cwd is the repo root here.
-            go mod download github.com/mattn/go-sqlite3
-            MODCACHE="$(go env GOMODCACHE | tr '\\' '/')"
-            SQLITE_SRC="$(ls -d "${MODCACHE}"/github.com/mattn/go-sqlite3@*/ | head -n 1)"
-            mkdir -p .sqlite3hdr
-            cp "${SQLITE_SRC}sqlite3-binding.h" .sqlite3hdr/sqlite3.h
-            cp "${SQLITE_SRC}sqlite3ext.h" .sqlite3hdr/sqlite3ext.h
+            # sqlite-vec cgo needs sqlite3.h. The Pre-compile step (same
+            # workspace) already staged the amalgamation headers into
+            # .sqlite3hdr; only the CGO_CFLAGS export must be repeated here
+            # because every step is a fresh shell. Do NOT re-copy the files:
+            # they inherit the Go module cache's read-only mode, and
+            # overwriting them fails on Windows with "Permission denied".
+            if [ ! -f .sqlite3hdr/sqlite3.h ]; then
+              go mod download github.com/mattn/go-sqlite3
+              MODCACHE="$(go env GOMODCACHE | tr '\\' '/')"
+              SQLITE_SRC="$(ls -d "${MODCACHE}"/github.com/mattn/go-sqlite3@*/ | head -n 1)"
+              mkdir -p .sqlite3hdr
+              cp "${SQLITE_SRC}sqlite3-binding.h" .sqlite3hdr/sqlite3.h
+              cp "${SQLITE_SRC}sqlite3ext.h" .sqlite3hdr/sqlite3ext.h
+            fi
             export CGO_CFLAGS="${CGO_CFLAGS} -I$(pwd -W | tr '\\' '/')/.sqlite3hdr"
           fi
 
