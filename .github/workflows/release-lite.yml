@@ -234,6 +234,7 @@ jobs:
 
           BUILD_TAGS="sqlite_fts5"
           NSIS_FLAG=""
+          BINDINGS_FLAG=""
 
           if [ "${{ runner.os }}" = "Linux" ]; then
             BUILD_TAGS="sqlite_fts5 webkit2_41"
@@ -243,6 +244,12 @@ jobs:
           fi
           if [ "${{ runner.os }}" = "Windows" ]; then
             NSIS_FLAG="-nsis"
+            # Bindings generation runs a helper binary that imports
+            # internal/types, whose package init calls gojieba (C++) and
+            # reliably segfaults on the Windows runner (run 37758244585).
+            # The generated JS/TS bindings are committed in
+            # frontend/src/wailsjs, so skip regeneration on Windows only.
+            BINDINGS_FLAG="-skipbindings"
             # sqlite-vec cgo needs sqlite3.h. The Pre-compile step (same
             # workspace) already staged the amalgamation headers into
             # .sqlite3hdr; only the CGO_CFLAGS export must be repeated here
@@ -263,6 +270,7 @@ jobs:
           bash ./scripts/check-license-bundle.sh
           cd cmd/desktop
           wails build -clean \
+            ${BINDINGS_FLAG} \
             -tags "${BUILD_TAGS}" \
             -platform "${{ matrix.platform }}" \
             ${NSIS_FLAG} \
