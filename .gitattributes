@@ -6,6 +6,13 @@
 *.go text eol=lf
 cli/acceptance/testdata/**/*.json text eol=lf
 
+# scripts/check-license-bundle.sh does regex/awk comparisons against these
+# text files; a CRLF checkout appends \r to the tsv checksum field and the
+# go.mod version field on Windows runners, failing the build.
+licenses/sources/modules.tsv text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+
 # Trellis: append-only developer journals should merge cleanly across
 # parallel sessions/worktrees — each session only appends a new block, so
 # there is nothing to actually conflict on.

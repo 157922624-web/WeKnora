@@ -208,6 +208,17 @@ jobs:
         run: |
           export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
           export CGO_CFLAGS="-Wno-deprecated-declarations"
+          # sqlite-vec cgo needs a sqlite3.h header; Windows runners don't
+          # provide one. Reuse the amalgamation header shipped inside the
+          # mattn/go-sqlite3 module so the header matches the SQLite that is
+          # actually linked into the binary.
+          go mod download github.com/mattn/go-sqlite3
+          MODCACHE="$(go env GOMODCACHE | tr '\\' '/')"
+          SQLITE_SRC="$(ls -d "${MODCACHE}"/github.com/mattn/go-sqlite3@*/ | head -n 1)"
+          mkdir -p .sqlite3hdr
+          cp "${SQLITE_SRC}sqlite3-binding.h" .sqlite3hdr/sqlite3.h
+          cp "${SQLITE_SRC}sqlite3ext.h" .sqlite3hdr/sqlite3ext.h
+          export CGO_CFLAGS="${CGO_CFLAGS} -I$(pwd -W | tr '\\' '/')/.sqlite3hdr"
           cd cmd/desktop
           go build -p 1 -buildvcs=false -tags "desktop,sqlite_fts5,production" -o _prebuild_tmp.exe . || true
           rm -f _prebuild_tmp.exe
@@ -232,6 +243,16 @@ jobs:
           fi
           if [ "${{ runner.os }}" = "Windows" ]; then
             NSIS_FLAG="-nsis"
+            # Provide sqlite3.h for the sqlite-vec cgo package (see the
+            # Pre-compile step): copy the mattn/go-sqlite3 amalgamation
+            # header and point CGO_CFLAGS at it. cwd is the repo root here.
+            go mod download github.com/mattn/go-sqlite3
+            MODCACHE="$(go env GOMODCACHE | tr '\\' '/')"
+            SQLITE_SRC="$(ls -d "${MODCACHE}"/github.com/mattn/go-sqlite3@*/ | head -n 1)"
+            mkdir -p .sqlite3hdr
+            cp "${SQLITE_SRC}sqlite3-binding.h" .sqlite3hdr/sqlite3.h
+            cp "${SQLITE_SRC}sqlite3ext.h" .sqlite3hdr/sqlite3ext.h
+            export CGO_CFLAGS="${CGO_CFLAGS} -I$(pwd -W | tr '\\' '/')/.sqlite3hdr"
           fi
 
           bash ./scripts/check-license-bundle.sh
