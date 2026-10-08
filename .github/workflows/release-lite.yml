@@ -189,7 +189,14 @@ jobs:
 
       - name: Install NSIS (Windows)
         if: runner.os == 'Windows'
-        run: choco install nsis -y
+        run: |
+          choco install nsis -y
+          # choco installs to a fixed dir but the runner process already
+          # holds its environment, so machine-PATH changes are invisible to
+          # later steps. GITHUB_PATH makes makensis resolvable when
+          # `wails build -nsis` shells out to it (run 37764535335 failed
+          # with "makensis not found").
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
       - name: Resolve version
         id: ver
