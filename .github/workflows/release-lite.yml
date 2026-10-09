@@ -346,13 +346,23 @@ jobs:
           rm -f wails.json.bak
           grep -q '"frontend:dir": "frontend"' wails.json
           echo "Patched wails.json frontend:dir -> frontend"
+          # `wails build -nsis` on Windows can exit 1 even when the build
+          # and NSIS installer both succeed (run 37896862479: L821 "Built",
+          # L825 "Building 'amd64' installer: Done", then exit 1). The bash
+          # shell runs with -e, so this false non-zero would abort before
+          # the post-build gate below. Tolerate it; the gate is the real
+          # check that the frontend landed in the binary.
           wails build -clean \
             ${BINDINGS_FLAG} \
             -tags "${BUILD_TAGS}" \
             -platform "${{ matrix.platform }}" \
             ${NSIS_FLAG} \
             -ldflags="${LDFLAGS}" \
-            -o "WeKnora Lite"
+            -o "WeKnora Lite" \
+            || WAILS_EXIT=$?
+          if [ -n "${WAILS_EXIT:-}" ] && [ "${WAILS_EXIT}" -ne 0 ]; then
+            echo "wails build exited ${WAILS_EXIT} (known false-negative on Windows NSIS); continuing to post-build gate."
+          fi
           # Post-build gate: confirm the SPA actually landed in the binary.
           # id="app" appears in both the Vite index.html and Wails' own
           # fallback page, so require a Vite hashed-asset path marker too.
