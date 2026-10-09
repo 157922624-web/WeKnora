@@ -183,6 +183,16 @@ jobs:
           test -f frontend/dist/index.html
           grep -q 'id="app"' frontend/dist/index.html
           ls frontend/dist | head
+          # Wails embeds {frontend:dir}/dist via //go:embed, which cannot
+          # reference paths outside the Go package (no '..'). cmd/desktop
+          # has frontend:dir "../../frontend" for local dev, so copy the
+          # built dist into the package-local path Wails will actually
+          # embed. Without this, wails build silently embeds nothing and
+          # the WebView shows the "index.html not found" error page.
+          mkdir -p cmd/desktop/frontend
+          rm -rf cmd/desktop/frontend/dist
+          cp -r frontend/dist cmd/desktop/frontend/dist
+          test -f cmd/desktop/frontend/dist/index.html
 
       - uses: actions/setup-go@v6
         with:
@@ -324,6 +334,18 @@ jobs:
 
           bash ./scripts/check-license-bundle.sh
           cd cmd/desktop
+          # //go:embed cannot reference paths outside the Go package ('..').
+          # The committed wails.json has frontend:dir "../../frontend" for
+          # local dev (frontend lives at repo root). At build time we must
+          # point it at the package-local copy staged by the verify step,
+          # otherwise wails build embeds nothing and the WebView shows
+          # the "index.html not found" error page at runtime.
+          test -f frontend/dist/index.html
+          # Portable across macOS/Linux/Windows Git Bash (no python3 on PATH).
+          sed -i.bak 's|"frontend:dir": "../../frontend"|"frontend:dir": "frontend"|' wails.json
+          rm -f wails.json.bak
+          grep -q '"frontend:dir": "frontend"' wails.json
+          echo "Patched wails.json frontend:dir -> frontend"
           wails build -clean \
             ${BINDINGS_FLAG} \
             -tags "${BUILD_TAGS}" \
@@ -331,6 +353,23 @@ jobs:
             ${NSIS_FLAG} \
             -ldflags="${LDFLAGS}" \
             -o "WeKnora Lite"
+          # Post-build gate: confirm the SPA actually landed in the binary.
+          # id="app" appears in both the Vite index.html and Wails' own
+          # fallback page, so require a Vite hashed-asset path marker too.
+          BIN=""
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="build/bin/WeKnora Lite.exe"
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            BIN="build/bin/WeKnora Lite.app/Contents/MacOS/WeKnora Lite"
+          else
+            BIN="build/bin/WeKnora Lite"
+          fi
+          test -f "$BIN"
+          if ! grep -a -q 'assets/index-' "$BIN"; then
+            echo "::error::Frontend assets not embedded in $BIN (no 'assets/index-' marker). wails.json frontend:dir or the dist staging step is broken."
+            exit 1
+          fi
+          echo "OK: $BIN contains embedded Vite assets."
 
       # ── macOS: bundle .app with resources, then create DMG ──
       - name: Package macOS app
