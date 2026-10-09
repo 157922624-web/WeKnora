@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -38,6 +39,11 @@ import (
 	"github.com/joho/godotenv"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// assets holds the compiled SPA served by Wails' AssetServer.
+//
+//go:embed all:frontend/dist
+var assets embed.FS
 
 // dragHandlerJS is injected into the webview on DomReady.
 // It bypasses Wails' built-in CSS-variable-based drag detection (which uses
@@ -409,6 +415,7 @@ func main() {
 		DisableResize: false,
 		Menu:          AppMenu,
 		AssetServer: &assetserver.Options{
+			Assets: assets,
 			Middleware: func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if isDesktopBackendRoute(r.URL.Path) {

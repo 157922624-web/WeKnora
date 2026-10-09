@@ -46,12 +46,13 @@ web/
 /server
 frontend/.vite
 frontend/chrome-extension/
-# CI-only staging: release-lite.yml copies frontend/dist here so Wails'
-# //go:embed can reference a package-local path (no '..'). Never commit.
-cmd/desktop/frontend/
-# CI-only staging: release-lite.yml copies frontend/dist here so Wails'
-# //go:embed can reference a package-local path (no '..'). Never commit.
-cmd/desktop/frontend/
+# CI staging + local placeholder for Wails' //go:embed (cannot use '..').
+# release-lite.yml copies frontend/dist here at build time; a committed
+# .gitkeep keeps the directory present so local `wails dev` can compile.
+cmd/desktop/frontend/*
+!cmd/desktop/frontend/dist/
+cmd/desktop/frontend/dist/*
+!cmd/desktop/frontend/dist/.gitkeep
 WeKnora-Chrome-Extension
 packages/protoc-3.19.4-linux-x86_64.zip
 
