@@ -398,7 +398,10 @@ func main() {
 	proxy := desktopAPIProxy(targetURL)
 
 	// Start Wails application
-	// We use a Reverse Proxy to seamlessly proxy Wails' frontend to our Go backend
+	// Wails serves the embedded SPA for frontend routes; backend-owned routes
+	// (API, health, swagger, redirects, files, embed) are reverse-proxied to
+	// the Go server. This avoids shipping a separate web/ directory and works
+	// regardless of the process working directory.
 	err := wails.Run(&options.App{
 		Title:         "WeKnora Lite",
 		Width:         1280,
@@ -406,7 +409,15 @@ func main() {
 		DisableResize: false,
 		Menu:          AppMenu,
 		AssetServer: &assetserver.Options{
-			Handler: proxy,
+			Middleware: func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if isDesktopBackendRoute(r.URL.Path) {
+						proxy.ServeHTTP(w, r)
+						return
+					}
+					next.ServeHTTP(w, r)
+				})
+			},
 		},
 		StartHidden: false, // Show window on startup
 		OnStartup:   app.startup,
@@ -587,6 +598,19 @@ func desktopAPIProxy(target *url.URL) *httputil.ReverseProxy {
 
 func isBrowserPairingRequest(req *http.Request) bool {
 	return req != nil && req.URL != nil && req.Method == http.MethodPost && req.URL.Path == "/api/v1/me/browser"
+}
+
+// isDesktopBackendRoute reports whether the request path must be handled by
+// the embedded Go backend rather than Wails' embedded frontend assets.
+// API routes, health checks, swagger docs, redirects, file downloads and
+// embed pages are backend-owned. Everything else is the SPA shell.
+func isDesktopBackendRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/") ||
+		strings.HasPrefix(path, "/health") ||
+		strings.HasPrefix(path, "/swagger/") ||
+		strings.HasPrefix(path, "/r/") ||
+		path == "/files" ||
+		strings.HasPrefix(path, "/embed/")
 }
 
 // desktopBackendListenAddr returns the TCP address for the embedded Gin server (Wails desktop).
