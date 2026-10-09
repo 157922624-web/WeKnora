@@ -137,6 +137,7 @@ jobs:
 
   # ── 2b. Build Desktop APP per platform (Wails) ──
   build-desktop-app:
+    needs: build-frontend
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +167,22 @@ jobs:
       CGO_ENABLED: 1
     steps:
       - uses: actions/checkout@v6
+
+      # Wails embeds frontend/dist into the desktop binary at build time.
+      # Without this artifact the AssetServer has no SPA to serve and the
+      # WebView renders a blank white page (v0.8.3 regression).
+      - uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Verify frontend dist embedded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f frontend/dist/index.html
+          grep -q 'id="app"' frontend/dist/index.html
+          ls frontend/dist | head
 
       - uses: actions/setup-go@v6
         with:

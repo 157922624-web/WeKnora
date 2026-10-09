@@ -9,22 +9,59 @@ import (
 	"github.com/yanyiwu/gojieba"
 )
 
-// Jieba is a global instance of Chinese text segmentation tool
+// Jieba is a global instance of Chinese text segmentation tool.
+// May be nil when dictionaries are missing; callers must nil-check
+// before calling Cut/CutForSearch (SegmentWithJieba guards this).
 var Jieba *gojieba.Jieba = newJieba()
 
+func jiebaDictsPresent(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	for _, name := range []string{
+		"jieba.dict.utf8",
+		"hmm_model.utf8",
+		"user.dict.utf8",
+		"idf.utf8",
+		"stop_words.utf8",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func newJieba() *gojieba.Jieba {
-	dictDir := os.Getenv("JIEBA_DICT_DIR")
-	if dictDir == "" {
-		return gojieba.NewJieba()
+	candidates := []string{}
+	if dir := os.Getenv("JIEBA_DICT_DIR"); dir != "" {
+		candidates = append(candidates, dir)
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "jieba-dict"))
+	}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(wd, "jieba-dict"))
 	}
 
-	return gojieba.NewJieba(
-		filepath.Join(dictDir, "jieba.dict.utf8"),
-		filepath.Join(dictDir, "hmm_model.utf8"),
-		filepath.Join(dictDir, "user.dict.utf8"),
-		filepath.Join(dictDir, "idf.utf8"),
-		filepath.Join(dictDir, "stop_words.utf8"),
-	)
+	for _, dir := range candidates {
+		if !jiebaDictsPresent(dir) {
+			continue
+		}
+		return gojieba.NewJieba(
+			filepath.Join(dir, "jieba.dict.utf8"),
+			filepath.Join(dir, "hmm_model.utf8"),
+			filepath.Join(dir, "user.dict.utf8"),
+			filepath.Join(dir, "idf.utf8"),
+			filepath.Join(dir, "stop_words.utf8"),
+		)
+	}
+
+	// Do not panic at init when dictionaries are absent (e.g. WebView-only
+	// launch without CWD/jieba-dict). Chinese segmentation degrades to
+	// no-op; English paths are unaffected.
+	os.Stderr.WriteString("WARNING: gojieba dictionaries not found (JIEBA_DICT_DIR / exe-dir/jieba-dict / cwd/jieba-dict); Jieba is nil, Chinese segmentation disabled\n")
+	return nil
 }
 
 // EvaluationStatue represents the status of an evaluation task

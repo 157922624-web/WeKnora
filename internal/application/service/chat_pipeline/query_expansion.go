@@ -256,11 +256,17 @@ func tokenize(text string) []string {
 
 		if currentIsHan {
 			// Use the existing search-mode dictionary for continuous Chinese text.
-			for _, word := range types.Jieba.CutForSearch(current.String(), true) {
-				word = strings.TrimSpace(word)
-				if word != "" {
-					tokens = append(tokens, word)
+			// types.Jieba is nil when dictionaries are missing; keep the whole
+			// Han run as one token so query expansion still has something to work with.
+			if types.Jieba != nil {
+				for _, word := range types.Jieba.CutForSearch(current.String(), true) {
+					word = strings.TrimSpace(word)
+					if word != "" {
+						tokens = append(tokens, word)
+					}
 				}
+			} else if s := strings.TrimSpace(current.String()); s != "" {
+				tokens = append(tokens, s)
 			}
 		} else {
 			tokens = append(tokens, current.String())

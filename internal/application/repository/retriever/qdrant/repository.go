@@ -1187,8 +1187,15 @@ func tokenizeQuery(query string) []string {
 		return nil
 	}
 
-	// Use jieba for segmentation (search mode for better recall)
-	words := types.Jieba.CutForSearch(query, true)
+	// Use jieba for segmentation (search mode for better recall).
+	// types.Jieba is nil when dictionaries are missing; keep the raw query
+	// as a single token so search still functions.
+	var words []string
+	if types.Jieba != nil {
+		words = types.Jieba.CutForSearch(query, true)
+	} else {
+		words = []string{query}
+	}
 
 	// Filter and deduplicate
 	seen := make(map[string]bool)

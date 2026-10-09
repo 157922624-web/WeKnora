@@ -45,8 +45,14 @@ func TokenizeSimple(text string) map[string]struct{} {
 
 	var words []string
 	if ContainsChinese(text) {
-		// Use jieba for Chinese text segmentation (search mode for finer granularity)
-		words = types.Jieba.CutForSearch(text, true)
+		// Use jieba for Chinese text segmentation (search mode for finer granularity).
+		// types.Jieba is nil when dictionaries are missing; fall back to the
+		// whole string so indexing does not crash on fresh installs.
+		if types.Jieba != nil {
+			words = types.Jieba.CutForSearch(text, true)
+		} else {
+			words = []string{text}
+		}
 	} else {
 		words = strings.Fields(text)
 	}

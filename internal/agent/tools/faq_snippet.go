@@ -304,8 +304,14 @@ func queryTerms(query string) []string {
 		// token that never occurred in any chunk and every snippet fell
 		// back to the chunk's opening. Segment it into words instead.
 		if searchutil.ContainsChinese(field) {
-			for _, word := range types.Jieba.CutForSearch(field, true) {
-				add(word)
+			// types.Jieba is nil when dictionaries are missing; add the whole
+			// Chinese field as one term so snippet matching still works.
+			if types.Jieba != nil {
+				for _, word := range types.Jieba.CutForSearch(field, true) {
+					add(word)
+				}
+			} else {
+				add(field)
 			}
 			continue
 		}
