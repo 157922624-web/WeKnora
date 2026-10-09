@@ -356,6 +356,10 @@ jobs:
           # Post-build gate: confirm the SPA actually landed in the binary.
           # id="app" appears in both the Vite index.html and Wails' own
           # fallback page, so require a Vite hashed-asset path marker too.
+          # vite.config.ts uses rollupOptions.input { main, embed }, so the
+          # entry chunks are assets/main-*.js — NOT the single-page default
+          # assets/index-*.js (that was the false-negative that failed run
+          # 37893748968 after a successful wails build).
           BIN=""
           if [ "${{ runner.os }}" = "Windows" ]; then
             BIN="build/bin/WeKnora Lite.exe"
@@ -365,8 +369,8 @@ jobs:
             BIN="build/bin/WeKnora Lite"
           fi
           test -f "$BIN"
-          if ! grep -a -q 'assets/index-' "$BIN"; then
-            echo "::error::Frontend assets not embedded in $BIN (no 'assets/index-' marker). wails.json frontend:dir or the dist staging step is broken."
+          if ! grep -a -q 'assets/main-' "$BIN"; then
+            echo "::error::Frontend assets not embedded in $BIN (no 'assets/main-' marker). wails.json frontend:dir or the dist staging step is broken."
             exit 1
           fi
           echo "OK: $BIN contains embedded Vite assets."
