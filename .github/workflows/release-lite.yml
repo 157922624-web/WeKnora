@@ -352,15 +352,26 @@ jobs:
           # shell runs with -e, so this false non-zero would abort before
           # the post-build gate below. Tolerate it; the gate is the real
           # check that the frontend landed in the binary.
+          # Disable errexit for the wails build: on Windows, `wails build -nsis`
+          # reliably returns exit 1 even when both the Go build and the NSIS
+          # installer succeed (runs 37896862479, 37899107753: "Built" +
+          # "Building 'amd64' installer: Done", then exit 1 with no further
+          # output). A plain `cmd || var=$?` under `set -e -o pipefail` was
+          # NOT sufficient — the step still aborted before the gate (no
+          # "wails build exited" echo ever appeared). So explicitly toggle
+          # errexit off around the build, capture the code, then restore it.
+          set +e
           wails build -clean \
             ${BINDINGS_FLAG} \
             -tags "${BUILD_TAGS}" \
             -platform "${{ matrix.platform }}" \
             ${NSIS_FLAG} \
             -ldflags="${LDFLAGS}" \
-            -o "WeKnora Lite" \
-            || WAILS_EXIT=$?
-          if [ -n "${WAILS_EXIT:-}" ] && [ "${WAILS_EXIT}" -ne 0 ]; then
+            -o "WeKnora Lite"
+          WAILS_EXIT=$?
+          set -e
+          echo "wails build exit code: ${WAILS_EXIT}"
+          if [ "${WAILS_EXIT}" -ne 0 ]; then
             echo "wails build exited ${WAILS_EXIT} (known false-negative on Windows NSIS); continuing to post-build gate."
           fi
           # Post-build gate: confirm the SPA actually landed in the binary.
@@ -370,15 +381,30 @@ jobs:
           # entry chunks are assets/main-*.js — NOT the single-page default
           # assets/index-*.js (that was the false-negative that failed run
           # 37893748968 after a successful wails build).
+          echo "Listing build/bin contents:"
+          ls -la build/bin/ || echo "build/bin does not exist or is empty"
           BIN=""
           if [ "${{ runner.os }}" = "Windows" ]; then
-            BIN="build/bin/WeKnora Lite.exe"
+            # wails -o "WeKnora Lite" on Windows produces WeKnora Lite.exe
+            # (log message strips the extension). Probe both spellings.
+            if [ -f "build/bin/WeKnora Lite.exe" ]; then
+              BIN="build/bin/WeKnora Lite.exe"
+            elif [ -f "build/bin/WeKnora Lite" ]; then
+              BIN="build/bin/WeKnora Lite"
+            else
+              echo "::error::Neither 'WeKnora Lite.exe' nor 'WeKnora Lite' found in build/bin/ on Windows."
+              exit 1
+            fi
           elif [ "${{ runner.os }}" = "macOS" ]; then
             BIN="build/bin/WeKnora Lite.app/Contents/MacOS/WeKnora Lite"
           else
             BIN="build/bin/WeKnora Lite"
           fi
-          test -f "$BIN"
+          echo "Checking binary: ${BIN}"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::Binary not found at ${BIN}"
+            exit 1
+          fi
           if ! grep -a -q 'assets/main-' "$BIN"; then
             echo "::error::Frontend assets not embedded in $BIN (no 'assets/main-' marker). wails.json frontend:dir or the dist staging step is broken."
             exit 1
