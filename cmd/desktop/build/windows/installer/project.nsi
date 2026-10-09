@@ -1,5 +1,10 @@
 ; Based on the Wails v2.12.0 default installer (MIT).
 ; See licenses/Wails-MIT.txt. Local change: install the notice/source bundle.
+; Local change (win-packaging fix): ship config/, migrations/sqlite, .env and
+; the gojieba dictionaries with the exe, write JIEBA_DICT_DIR to HKCU, and
+; install per-user under $LOCALAPPDATA so a non-admin account can both
+; install and write the SQLite data dir (DB_PATH is cwd-relative and
+; configureDesktopStorage only rewrites it on macOS).
 Unicode true
 
 ####
@@ -30,7 +35,7 @@ Unicode true
 ## !define PRODUCT_EXECUTABLE  "Application.exe"      # Default "${INFO_PROJECTNAME}.exe"
 ## !define UNINST_KEY_NAME     "UninstKeyInRegistry"  # Default "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 ####
-## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
+!define REQUEST_EXECUTION_LEVEL "user"
 ####
 ## Include the wails tools
 ####
@@ -51,6 +56,7 @@ VIAddVersionKey "ProductName"     "${INFO_PRODUCTNAME}"
 ManifestDPIAware true
 
 !include "MUI.nsh"
+!include "WinMessages.nsh"
 
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
@@ -74,7 +80,7 @@ ManifestDPIAware true
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
-InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Default installing folder ($PROGRAMFILES is Program Files folder).
+InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Per-user: $LOCALAPPDATA stays writable for the SQLite data dir.
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
@@ -97,6 +103,27 @@ Section
     File /r "..\..\..\..\..\licenses\*"
     SetOutPath $INSTDIR
 
+    ; Desktop runtime payload staged by release-lite.yml on the runner:
+    ; config.yaml + prompt_templates (viper), sqlite migrations
+    ; (golang-migrate), .env (godotenv) and the gojieba dictionaries
+    ; (JIEBA_DICT_DIR, set below). The Lite desktop binary chdirs to the
+    ; exe directory, so all of these resolve relative to $INSTDIR.
+    File /r "..\..\..\..\..\config"
+    SetOutPath "$INSTDIR\migrations"
+    File /r "..\..\..\..\..\migrations\sqlite"
+    SetOutPath "$INSTDIR"
+    File "..\..\..\..\..\.env"
+    SetOutPath "$INSTDIR\jieba-dict"
+    File /r "..\..\..\..\..\jieba-dict\*"
+    SetOutPath $INSTDIR
+
+    ; Point the desktop runtime at the shipped dictionaries. Package-level
+    ; init (var Jieba = newJieba()) runs before main()'s godotenv.Load(),
+    ; so a .env entry would be too late; HKCU + broadcast makes the
+    ; variable visible to processes started after install.
+    WriteRegStr HKCU "Environment" "JIEBA_DICT_DIR" "$INSTDIR\jieba-dict"
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
@@ -115,6 +142,9 @@ Section "uninstall"
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
+
+    DeleteRegValue HKCU "Environment" "JIEBA_DICT_DIR"
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols

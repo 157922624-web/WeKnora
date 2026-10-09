@@ -230,6 +230,37 @@ jobs:
           go build -p 1 -buildvcs=false -tags "desktop,sqlite_fts5,production" -o _prebuild_tmp.exe . || true
           rm -f _prebuild_tmp.exe
 
+      # ── Windows: stage runtime resources the NSIS installer must ship ──
+      # The desktop binary expects config/, migrations/sqlite, .env and the
+      # gojieba dictionaries relative to its working directory (cmd/desktop
+      # main.go chdirs to the exe dir). macOS/Linux packaging already copies
+      # these; the Windows installer previously shipped only the bare exe
+      # and every fresh install panicked at boot (missing config/.env/dict).
+      - name: Stage Windows runtime resources (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d config
+          test -d migrations/sqlite
+          # .env: cmd/desktop/main.go calls godotenv.Load() so DB_DRIVER etc.
+          # get set (same file the macOS bundle ships).
+          test -f .env.lite.example
+          cp .env.lite.example .env
+          grep -q '^DB_DRIVER=sqlite' .env
+          # gojieba dictionaries from the module cache (no network beyond go).
+          go mod download github.com/yanyiwu/gojieba
+          MODCACHE="$(go env GOMODCACHE | tr '\\' '/')"
+          JIEBA_SRC="$(ls -d "${MODCACHE}"/github.com/yanyiwu/gojieba@*/deps/cppjieba/dict/ | head -n 1)"
+          test -n "${JIEBA_SRC}"
+          test -d "${JIEBA_SRC}"
+          mkdir -p jieba-dict
+          for f in jieba.dict.utf8 hmm_model.utf8 user.dict.utf8 idf.utf8 stop_words.utf8; do
+            cp "${JIEBA_SRC}${f}" "jieba-dict/${f}"
+          done
+          ls -la jieba-dict
+          test -f jieba-dict/jieba.dict.utf8
+
       - name: Build desktop app
         shell: bash
         run: |
