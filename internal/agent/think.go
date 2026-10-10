@@ -621,6 +621,22 @@ func (e *AgentEngine) callLLMWithRetry(
 		return nil, fmt.Errorf("LLM call failed: %w", err)
 	}
 
+	// 部分模型把工具调用以 DSML 文本标记写进 content 而非原生 tool_calls；
+	// 若不回收，这段原文会作为最终答案直接回给用户（observe.go 的
+	// natural-stop finalize 只看 len(ToolCalls)==0）。
+	if len(response.ToolCalls) == 0 {
+		if recovered, rest := agenttools.RecoverDSMLToolCalls(response.Content); len(recovered) > 0 {
+			names := make([]string, len(recovered))
+			for i, tc := range recovered {
+				names[i] = tc.Function.Name
+			}
+			logger.Infof(ctx, "[Agent][Round-%d] 从 content 恢复 %d 个 DSML 工具调用: %v",
+				round, len(recovered), names)
+			response.ToolCalls = recovered
+			response.Content = rest
+		}
+	}
+
 	common.PipelineInfo(ctx, "Agent", "think_result", map[string]interface{}{
 		"iteration":     iteration,
 		"finish_reason": response.FinishReason,
